@@ -215,6 +215,60 @@ func TestPrefix(t *testing.T) {
 	}
 }
 
+func TestHandlerPropfindDepthLimit(t *testing.T) {
+	ctx := context.Background()
+	fs := NewMemFS()
+	for _, name := range []string{"/top", "/top/child", "/top/child/grandchild"} {
+		if err := fs.Mkdir(ctx, name, 0o755); err != nil {
+			t.Fatalf("Mkdir(%q): %v", name, err)
+		}
+	}
+
+	for _, test := range []struct {
+		name                   string
+		allowInfinitePropfind  bool
+		depth                  string
+		wantGrandchildResponse bool
+	}{
+		{
+			name:                   "default caps infinity to one level",
+			depth:                  "infinity",
+			wantGrandchildResponse: false,
+		},
+		{
+			name:                   "default missing depth is one level",
+			wantGrandchildResponse: false,
+		},
+		{
+			name:                   "allows infinity when enabled",
+			allowInfinitePropfind:  true,
+			depth:                  "infinity",
+			wantGrandchildResponse: true,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h := &Handler{
+				FileSystem:            fs,
+				LockSystem:            NewMemLS(),
+				AllowInfinitePropfind: test.allowInfinitePropfind,
+			}
+			req := httptest.NewRequest("PROPFIND", "http://example.com/top", nil)
+			if test.depth != "" {
+				req.Header.Set("Depth", test.depth)
+			}
+			resp := httptest.NewRecorder()
+			h.ServeHTTP(resp, req)
+			if resp.Code != StatusMulti {
+				t.Fatalf("status = %d, want %d", resp.Code, StatusMulti)
+			}
+			gotGrandchildResponse := strings.Contains(resp.Body.String(), "/top/child/grandchild/")
+			if gotGrandchildResponse != test.wantGrandchildResponse {
+				t.Fatalf("grandchild response = %t, want %t; body=%s", gotGrandchildResponse, test.wantGrandchildResponse, resp.Body.String())
+			}
+		})
+	}
+}
+
 func TestEscapeXML(t *testing.T) {
 	// These test cases aren't exhaustive, and there is more than one way to
 	// escape e.g. a quot (as "&#34;" or "&quot;") or an apos. We presume that

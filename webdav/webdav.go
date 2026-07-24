@@ -44,6 +44,10 @@ type Handler struct {
 	FileSystem FileSystem
 	// LockSystem is the lock management system.
 	LockSystem LockSystem
+	// AllowInfinitePropfind controls whether PROPFIND may recursively walk a
+	// collection. The zero value limits missing and "infinity" Depth headers to
+	// one level, preventing expensive recursive listings on remote filesystems.
+	AllowInfinitePropfind bool
 	// Logger is an optional error logger. If non-nil, it will be called
 	// for all HTTP requests.
 	Logger func(*http.Request, error)
@@ -549,6 +553,10 @@ func (h *Handler) handlePropfind(w http.ResponseWriter, r *http.Request) (status
 			return http.StatusBadRequest, errInvalidDepth
 		}
 	}
+	if depth == infiniteDepth && !h.AllowInfinitePropfind {
+		depth = 1
+	}
+
 	pf, status, err := readPropfind(r.Body)
 	if err != nil {
 		return status, err
